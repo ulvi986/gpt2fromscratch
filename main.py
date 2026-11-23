@@ -56,6 +56,11 @@ def softmax(x):
     return result
 
 
+def apply_causal_mask(scores):
+    T = scores.size(1)
+    for i in range(T):
+        scores[i, i+1:] = float("-inf")   # i-ci sətirdə i+1-dən sona qədər
+    return scores
 # head_size ile n_head multiply olacaq ve olculeri 16 olacaq
 # n_head cox olmasinin sebebi ise cumle icinde muxtelif elaqeleri oyrenmesi ile baglidir
 # Sual ise niye embedding_size, head_size olmasi ile baglidir
@@ -63,13 +68,13 @@ def softmax(x):
 # Head_size olmasi ise -> axirda her biri concat olunacag multi head attentiona gore ona gore olculeri mueyyenlesdirir.
 
 
-def Attention(sequence_length, embedding_size,x):
+def SelfAttention(sequence_length, embedding_size,x):
     # @ -> matrix multiplication
     # softmax -> normalization etmek ucundur
     # cross-entropy -> alinmis softmaxdan -ln(softmax_result) -> loss function kimi istifade olunur
     T = sequence_length
     C = embedding_size
-    block_size, embedding_size = x.size()
+    sequence_length, embedding_size = x.size()
     # demeli burada x olmalidir -> x-i input kimi gotururler ve buna gorede x tam olaraq inputdur
     # burada sadece T*C formatindadir, token * channel 
     # buradada token vurulsun channel , block size ve embedding size olmalidir
@@ -84,13 +89,31 @@ def Attention(sequence_length, embedding_size,x):
     q = x @ Wq
     k = x @ Wk
     v = x @ Wv
-    attention = ( (q @ k.T) / math.sqrt(k.size(1)))
+    scores = ( (q @ k.T) / math.sqrt(k.size(1)))
+    attention = apply_causal_mask(scores)
     attention = softmax(attention)
     attention = attention @ v
 
     return attention
 # MultiHeadAttention hissesinde ise onlar concat olunacaq
-def MultiHeadAttention(Wq, Wv, Wk):
+# MultiHead Attentionda eledirki biz onu bezi hisselere ayiracayiq
+# Sonra ise hemin hisseleri birlesdireceyik 
+# Bundan sebeb bizde C,C seklinde olmalidir
+
+def MultiHeadAttention(embedding_size, sequence_length,Wq, Wv, Wk):
+    n_head = 8
+    T = sequence_length
+    C = embedding_size
+    T,C = x.size()
+    head_size = embedding_size // n_head # d_k
+    Wq = torch.randn(C, C) # queries -> men ne axtariram
+    Wk = torch.randn(C, C) # keys -> mene ne vere bilersen
+    Wv = torch.randn(C, C) # value -> mene ne verdin
+    
+    for i in range(n_head):
+
+
+        
     MultiHeadAttention = torch.cat((Wq, Wv, Wk))
     return MultiHeadAttention
 
