@@ -12,6 +12,7 @@ n_head = 4
 n_embd = 128
 dropout = 0.1
 device = 'cuda'
+dropout = nn.Dropout(0.1)
 batch_size = 4 # her gelen data 4 hisseye ayrilib ele verilecekdir.( mini batches mentiqi)
 
 # Token embedding and Positional embedding
@@ -32,7 +33,11 @@ after x + MLP(LN2(x))
 
 # region Token Embedding
 def tokenEmbedding(vocab_size, embedding_size):
-    tokenembedding = nn.Embedding(vocab_size, n_embd) # adi embedding table
+    tokenembedding = nn.Embedding(vocab_size, embedding_size) # adi embedding table
+    with torch.no_grad():
+        tokenembedding.weight.copy_(
+            torch.randn(vocab_size, embedding_size) * 0.02
+        )
     return tokenembedding
 
 tokenEmbedding = tokenEmbedding(vocab_size, n_embd)
@@ -47,20 +52,21 @@ tokenEmbedding = tokenEmbedding(vocab_size, n_embd)
 # ona gore her bir cut yerde duranlar ucun ayri bir dustur
 # tek yerde duranlar ucun ayri bir dustur
 # block size ile eliyendede sequence length hissesine qeder gozlemeliyik
+# Positinal encoding -> sinusoid ve cosinisoid kimi fix dusturlar uzerinden gede bilerik
+# Yada random initialization -> random initialize edirler ve ondan sonra trainable edirler 
+# ve onlari dovler erzinde training edirler
 
+# nn.parameter -> parametrin oyrenile bilen oldugunu gosterir bizim ucun
+# nn.init -> baslangic qiymetlerini mueyyenlesdirir parametrin
+# standard deviation -> 0.02 dir ve bu chebiyev teoremine gore 68 faiz ehtimal demekdir mean de 0 olur
 
 
 def positionalEmbedding(block_size, embedding_size): # positional embedding
     positionalEmbedding = nn.Embedding(block_size, embedding_size)
-    position = torch.arange(0, block_size, dtype=torch.long).unsqueeze(1) #column uzerinden getmeliyik
-    div_term = torch.exp(
-        torch.arange(0, embedding_size, 2) * 
-        (-math.log(10000.0) / embedding_size)
-    )
-
-    positionalEmbedding[:, 0::2] = torch.sin(position * div_term)
-    positionalEmbedding[:, 1::2] = torch.cos(position * div_term)
-
+    with torch.no_grad():
+        positionalEmbedding.weight.copy_(
+            torch.randn(block_size, embedding_size) * 0.02
+        )
     return positionalEmbedding
 
 
@@ -68,7 +74,14 @@ positionalEmbedding = positionalEmbedding(block_size, n_embd)
 
 #endregion
 
-x = tokenEmbedding + positionalEmbedding[:sequence_length]
+
+# burda pos_emb ve tok_emb teyin elemek lazimdir bax bel, cunki embedding yarandi bes icine ne verirsen
+# onuda bilmelisen
+pos_emb = positionalEmbedding(torch.arange(sequence_length))
+tok_emb = tokenEmbedding(tokens)
+x = tok_emb + pos_emb
+x = dropout(x)
+
 
 
 # softmax function bizim ucun butun tokenler arasinda ehtimal paylanmasi etmek ucundur
