@@ -2,7 +2,7 @@ import numpy as np
 from torch import nn, optim
 import torch
 import math
-from torch import nn as F
+import torch.nn.functional as F
 
 
 vocab_size = 1024
@@ -63,9 +63,9 @@ tokenEmbedding = tokenEmbedding(vocab_size, n_embd)
 
 def positionalEmbedding(block_size, embedding_size): # positional embedding
     positionalEmbedding = nn.Embedding(block_size, embedding_size)
-    with torch.no_grad():
+    with torch.no_grad(): # torch no grad ozumuz qesden yaziriq, gradienltlerin olacagini bildirmek ucun 
         positionalEmbedding.weight.copy_(
-            torch.randn(block_size, embedding_size) * 0.02
+            torch.randn(block_size, embedding_size) * 0.02 # standard sapma
         )
     return positionalEmbedding
 
@@ -118,6 +118,12 @@ def apply_causal_mask(scores):
 
 # Adi self attentionda head_size qurmagina bele ehtoyyac yoxdur!
 
+# Testden bizi isteyirki qkv birlikde one linear seklinde olsun
+# sadece istediyi bizden odur ki, biz birlesdirek ve sonra ayiraq
+# matrix multiplication azaltmaq ucun
+# model birdefelik herseyi hesablamaga calisacaq deye gpu utilization yuksek olacaq
+
+
 # region Self Attention
 def SelfAttention(sequence_length, embedding_size,x):
     # @ -> matrix multiplication
@@ -136,17 +142,17 @@ def SelfAttention(sequence_length, embedding_size,x):
     # Q,k,v ise sadece bize lazim olan query,key, valuedir yeni neticeler
 
     # torch randomizasiya ederek bizim ucun lazim olan weightleri verir
+    Wqkv = nn.Linear(C, 3*C, bias=False)
 
-    Wq = torch.randn(C, head_size) # queries -> men ne axtariram
-    Wk = torch.randn(C, head_size) # keys -> mene ne vere bilersen
-    Wv = torch.randn(C, head_size) # value -> mene ne verdin
-    q = x @ Wq
-    k = x @ Wk
-    v = x @ Wv
+    qkv = Wqkv(x)
+    q,k,v = qkv.split(C, dim = -1)
+    
     # uje q,k,v nin olcusu bizde alinir sequence length * head_size olur
     scores = ( (q @ k.T) / math.sqrt(k.size(1)))
     attention = apply_causal_mask(scores)
-    attention = softmax(attention)
+    attention = nn.softmax(attention,dim = -1) # dimensionaltiy rowlar uzerinde aparilmasini isteyirik
+    # her bir rowun normalizasiyasi ele olsun ki cemleri 1 e beraber olsun 
+
     attention = attention @ v
 
     return attention
@@ -158,28 +164,30 @@ def SelfAttention(sequence_length, embedding_size,x):
 # MultiHead Attentionda eledirki biz onu bezi hisselere ayiracayiq
 # Sonra ise hemin hisseleri birlesdireceyik 
 # Bundan sebeb bizde C,C seklinde olmalidir
-
-def MultiHeadAttention(embedding_size, sequence_length,Wq, Wv, Wk,x):
-    n_head = 8
+# Funksiyanin icinde yazmaq serf elemeyecek, cunki bizde her loop erzinde, funksiya isleyecek
+# Burda problem yoxdur, amma problem odur ki, o andan etibaren herdefe yenisi yaradilir, kohnesi cumulative olmur
+# Bu sebebi aradan qaldirmaq ucun initialization muhitini kenarda etmek lazimdir
+def MultiHeadAttention(embedding_size, sequence_length,Wqkv,x, Wo,n_head = 4):
     T = sequence_length
     C = embedding_size
     T,C = x.size()
     head_size = embedding_size // n_head # d_k
 
     heads = []
-    
+    qkv = Wqkv(x)
+    # Burdada c ile olunur, amma ki eger q heads, k heads ve artiq v heads tapanda onda uje avtomatik olaraq heads size kecirik
+    q,k,v = qkv.split(C, dim = -1)    
+    q_heads = q.split(head_size, dim=-1)
+    k_heads = k.split(head_size, dim=-1)
+    v_heads = v.split(head_size, dim=-1)
     for i in range(n_head):
-        Wq = torch.randn(C, head_size) # queries -> men ne axtariram
-        Wk = torch.randn(C, head_size) # keys -> mene ne vere bilersen
-        Wv = torch.randn(C, head_size) # value -> mene ne verdin
-
-        q = x @ Wq
-        k = x @ Wk
-        v = x @ Wv
-
+        q = q_heads[i]
+        v = v_heads[i]
+        k = k_heads[i]
         scores = ( (q @ k.T) / math.sqrt(k.size(1)))
         attention = apply_causal_mask(scores)
         attention = softmax(attention, dim = -1)
+        attention = dropout(attention)
         attention = attention @ v
         heads.append(attention)
 
@@ -187,10 +195,15 @@ def MultiHeadAttention(embedding_size, sequence_length,Wq, Wv, Wk,x):
     result = torch.cat(heads, dim=-1)  # Concatenate along the last dimension
     # burda bize birdenede elave olaraq lazimdirki headler duz elaqededir
     # amma Wo olarsa onda uje elave olaraq hemcinin bizde diger headler ile elaqede qurulur
-    Wo = torch.randn(C,C)
-    result = result * Wo
+    result = Wo(result) # eger zaten Linear function kimi yaradirsansa bir novu onun icine alirsan
+    # son netice olaraq bilirsen ne cixir linear function seklinde: (T,128) @ (128,128) = (T, 128)
     return result
 
+
+Wqkv = nn.Linear(n_embd, 3*n_embd, bias = False)
+nn.init.normal_(Wqkv.weight, mean = 0.0, std = 0.02)
+Wo = nn.Linear(n_embd, n_embd, bias = False) # bunu ona gore yaziriq ki butun headler bir biri ile danisa bilsin
+nn.init.normal_(Wo.weight, mean = 0.0, std = 0.02)
 
 
 # gamma ve beta trainable parametrlerdir
