@@ -215,17 +215,21 @@ nn.init.normal_(Wo.weight, mean = 0.0, std = 0.02)
 # beta ise biz daha cox eded oxu uzerinde menfi veya musbet olan hisselerde ehreketimize baxiriq
 
 
-def layerNorm(sequence_length, embedding_size, epslon = 0.02):
+def layerNorm(sequence_length, embedding_size, gamma,x, beta, epslon = 3e-4):
     T = sequence_length
     C = embedding_size
     T,C = x.size()
     mean = x.mean(dim=-1, keepdim=True) # dimensionalityni saxlamaq ucun
     variance = ((x - mean) ** 2 ).mean(dim = -1, keepdim = True)
-    gamma = nn.Parameter(torch.ones(embedding_size))
-    beta = nn.Parameter(torch.zeros(embedding_size))
 
-    y = (gamma * ( (x - mean) /  ( (variance + beta) ** (-0.5)) )   + beta)
+    y = (gamma * ( (x - mean) /  ( (variance + epslon) ** (0.5)) ) + beta)
     return y
+
+
+gamma = nn.Parameter(torch.ones(n_embd)) # scale etmek ucundur
+beta = nn.Parameter(torch.zeros(n_embd)) #shift etmek ucundur
+
+# epslon sadece bu asagidaki hisse menfi falan olmasin deye, stabilliyi qoruyur o qeder
 
 
 # residual connection -> evvelki melumatlari unutmamaq ucun istifade olunan mexanizmdir
@@ -243,13 +247,8 @@ def add(x, output):
 
 
 
-def MLP(sequence_length, embedding_size,x):
+def MLP(sequence_length, embedding_size,x, W1, W2):
     hidden_size = embedding_size * 4
-    W1 = nn.Parameter(torch.randn(embedding_size,hidden_size) * 0.02) # bu initiazalition ucundur ki, cox boyuk baslamasin
-    W2 = nn.Parameter(torch.randn(hidden_size, embedding_size) * 0.02)
-
-    b1 = nn.Parameter(torch.zeros(hidden_size))
-    b2 = nn.Parameter(torch.zeros(embedding_size))
 
 
     x = x @ W1 + b1 # artiq daha boyuk olculu shape icine girdi
@@ -258,6 +257,12 @@ def MLP(sequence_length, embedding_size,x):
 
     return x
     
+
+W1 = nn.Linear(n_embd, 4*n_embd, bias=False)
+W2 = nn.Linear(4*n_embd, n_embd, bias=False)
+
+nn.init.normal_(W1.weight, mean=0.0, std=0.02)
+nn.init.normal_(W2.weight, mean=0.0, std=0.02)
 
 def forward(): # x uje hazirdir indi ise sira modele vermeye gelibdr
 
