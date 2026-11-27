@@ -107,6 +107,27 @@ def apply_causal_mask(scores):
         scores[i, i+1:] = float("-inf")   # i-ci sətirdə i+1-dən sona qədər
     return scores
 # endregion
+
+
+def create_linear(input_size, output_size):
+    W = nn.Linear(input_size, output_size, bias = False)
+    nn.init.normal_(W.weight, mean = 0.0, std = 0.02)
+    return W
+
+
+def create_block(C):
+
+    block = {
+        "Wqkv": create_linear(C, 3*C),
+        "Wo": create_linear(C, C),
+        "W1": create_linear(C, 4*C),
+        "W2": create_linear(4*C, C),
+        "ln1": nn.LayerNorm(C),
+        "ln2": nn.LayerNorm(C)
+    }
+
+    return block
+
 # head_size ile n_head multiply olacaq ve olculeri 16 olacaq
 # n_head cox olmasinin sebebi ise cumle icinde muxtelif elaqeleri oyrenmesi ile baglidir
 # Sual ise niye embedding_size, head_size olmasi ile baglidir
@@ -248,15 +269,14 @@ def add(x, output):
 
 
 def MLP(sequence_length, embedding_size,x, W1, W2):
-    hidden_size = embedding_size * 4
-
-
-    x = x @ W1 + b1 # artiq daha boyuk olculu shape icine girdi
-    x = F.gelu(x)
-    x = x @ W2 + b2
-
+    x = W1(x) # artiq daha boyuk olculu shape icine girdi
+    x = F.gelu(x, approximate = 'tanh')
+    x = W2(x)
+    x = dropout(x)
     return x
     
+
+# Burda w1 and w2 ayri goturulur, cunki onda yeniden butun parameters paylanmir
 
 W1 = nn.Linear(n_embd, 4*n_embd, bias=False)
 W2 = nn.Linear(4*n_embd, n_embd, bias=False)
@@ -264,10 +284,21 @@ W2 = nn.Linear(4*n_embd, n_embd, bias=False)
 nn.init.normal_(W1.weight, mean=0.0, std=0.02)
 nn.init.normal_(W2.weight, mean=0.0, std=0.02)
 
-def forward(): # x uje hazirdir indi ise sira modele vermeye gelibdr
 
-    x = tokenEmbedding + positionalEmbedding
-    x = x + Attention(layerNorm(x))
-    x = x + MLP(layerNorm(x))
+# bir transformer block -> 
+# input -> tokens
+# layer Norm
+# multihead attention
+# Layer norm 2
+# MLP + GELU
+# Output tokens
+# Layer norm olur ve attention mexanizm olur
+# +
+# Layer norm olur ve mlp mexanizm olur
 
-dusunurem ki pis yazmamisam
+# layer vasitesi ile biz o blocklari tetbiq edeceyik
+
+
+blocks = []
+for i in range(n_layer):
+    blocks.append(create_block(n_embd))
