@@ -40,6 +40,8 @@ def tokenEmbedding(vocab_size, embedding_size):
         )
     return tokenembedding
 
+
+# Token Embedding artiq burda tam sekilde alinibdir, nn embeddingden ve onunla irelileyecik
 tokenEmbedding = tokenEmbedding(vocab_size, n_embd)
 
 # endregion
@@ -109,16 +111,21 @@ def apply_causal_mask(scores):
 # endregion
 
 
+
+
+# linear funksiyalarin yaradilmasi
 def create_linear(input_size, output_size):
     W = nn.Linear(input_size, output_size, bias = False)
     nn.init.normal_(W.weight, mean = 0.0, std = 0.02)
     return W
 
 
+
+# esas linear funksiyalarin yaradilmasi
 def create_block(C):
 
     block = {
-        "Wqkv": create_linear(C, 3*C),
+        "Wqkv": create_linear(C, 3*C), 
         "Wo": create_linear(C, C),
         "W1": create_linear(C, 4*C),
         "W2": create_linear(4*C, C),
@@ -299,6 +306,52 @@ nn.init.normal_(W2.weight, mean=0.0, std=0.02)
 # layer vasitesi ile biz o blocklari tetbiq edeceyik
 
 
+# Block mexanizm kimi qururuq
+# Burda bele deyek evvelce funksiyalari qururuq, ondan sonra ise onlari block kimi edirik 
+
+
+def transformer_block(x, block):
+
+    T, C = x.size()
+
+    x = x + MultiHeadAttention(
+        C,
+        T,
+        block["Wqkv"],
+        block["ln1"](x),
+        block["Wo"],
+        n_head
+    )
+
+    x = x + MLP(
+        T,
+        C,
+        block["ln2"](x),
+        block["W1"],
+        block["W2"]
+    )
+
+    return x
+
+
+
+# eslinde x artiq token halini almis halidir
+ 
 blocks = []
 for i in range(n_layer):
     blocks.append(create_block(n_embd))
+
+for i in range(n_layer): # her bir blockun uzerine bir veifesi vardir 
+    x = transformer_block(x, blocks[i])
+
+
+
+# forward function
+def forward(tokens):
+    sequence_lenght = tokens.size()
+    tokenEmbedding = tokenEmbedding(tokens)
+    positionalEmbedding = positionalEmbedding(sequence_lenght)
+    x = tokenEmbedding + positionalEmbedding # Token Embedding side okay
+    x = dropout(x)
+    
+
